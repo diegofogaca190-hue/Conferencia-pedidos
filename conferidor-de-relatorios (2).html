@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><script src="https://myhub.ia.br/canvas-vendor/tailwind.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conferidor de relatórios</title>
+<style>
+  :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--brand:#2457d6;--brand2:#eaf0ff;--bg:#f4f7fb;--white:#fff;--good:#087443;--warn:#a85b00;--bad:#bb2938}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  header{background:#14213d;color:white;padding:22px clamp(16px,4vw,48px)}header h1{margin:0 0 4px;font-size:22px}header p{margin:0;color:#d3ddf2}
+  main{max-width:1400px;margin:auto;padding:22px clamp(12px,3vw,32px) 48px}
+  .notice{background:#fff8e8;border:1px solid #f1d79d;color:#684300;border-radius:10px;padding:12px 14px;margin-bottom:18px}
+  .tabs{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 16px}.tab{border:1px solid var(--line);background:white;color:#334155;padding:9px 13px;border-radius:9px;cursor:pointer;font-weight:650}
+  .tab.active{background:var(--brand);border-color:var(--brand);color:white}
+  .panel{background:white;border:1px solid var(--line);border-radius:13px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px #16284a08}
+  h2{font-size:18px;margin:0 0 12px}h3{font-size:15px;margin:0 0 10px}
+  .muted{color:var(--muted)}.small{font-size:12px;color:var(--muted)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+  label{display:block;font-weight:650;font-size:12px;color:#344256;margin:0 0 5px}
+  input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:9px 10px;font:inherit;color:var(--ink);background:white}
+  textarea{min-height:68px;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:2px solid #b8ccff;border-color:var(--brand)}
+  .field{min-width:0}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:13px}
+  button,.button{border:0;border-radius:8px;padding:9px 13px;background:var(--brand);color:white;font:inherit;font-weight:700;cursor:pointer}
+  button.secondary,.button.secondary{background:#e9eef7;color:#26364d}button.danger{background:#fff0f0;color:#a51f2b}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .scroll{overflow:auto;border:1px solid var(--line);border-radius:9px;margin-top:12px}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:620px}
+  th,td{padding:9px 10px;border-bottom:1px solid #e8edf4;text-align:left;vertical-align:top}
+  th{background:#f5f7fb;color:#42516a;font-size:12px;white-space:nowrap}
+  tr:last-child td{border-bottom:0}.cell-actions{white-space:nowrap}
+  .badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:750;background:#edf1f7;color:#42516a}
+  .badge.good{background:#e6f6ed;color:var(--good)}.badge.warn{background:#fff1da;color:var(--warn)}.badge.bad{background:#ffe8e9;color:var(--bad)}
+  .upload{display:block;border:2px dashed #b7c6dc;border-radius:12px;padding:24px;text-align:center;background:#fafcff}
+  .upload input{max-width:380px;margin:12px auto 0}
+  .mapping{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.stat{background:#f2f5fa;border-radius:9px;padding:9px 12px}
+  .stat strong{font-size:17px;margin-right:5px}
+  .row-hit{background:#fff8df}.row-issue{box-shadow:inset 4px 0 #e79a19}.row-hit.row-issue{background:#fff2d5}
+  .empty{padding:20px;text-align:center;color:var(--muted)}
+  .hidden{display:none!important}
+  footer{color:var(--muted);font-size:12px;padding:6px 2px}
+  @media(max-width:600px){header h1{font-size:19px}.panel{padding:13px}.tabs{gap:5px}.tab{padding:8px 10px;font-size:12px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Conferidor de relatórios</h1>
+  <p>Cadastros, conferência de pedidos e tratamento configurável de relatórios CSV.</p>
+</header>
+<main>
+  <div class="notice"><strong>Importação:</strong> esta versão recebe CSV separado por vírgula, ponto e vírgula ou tabulação. Para usar um arquivo Excel, salve uma cópia como CSV UTF-8. Os dados ficam nesta sessão do navegador; exporte os cadastros em JSON para guardá-los.</div>
+  <nav class="tabs" id="tabs"></nav>
+  <section id="content"></section>
+  <footer>O programa não inventa dados: campos sem cadastro ou inconsistências são sinalizados para revisão. A substituição de transportadora altera somente o código mapeado.</footer>
+</main>
+<script>
+(() => {
+  const definitions = {
+    clients:{title:"Clientes",fields:[
+      {key:"code",label:"Código do cliente",required:true},
+      {key:"name",label:"Nome",required:true},
+      {key:"notes",label:"Particularidades / instruções",type:"textarea"},
+      {key:"freightMode",label:"Regra para o campo de frete",type:"select",options:[["none","Não alterar"],["append","Acrescentar ao conteúdo"],["replace","Substituir o conteúdo"]]},
+      {key:"freightValue",label:"Texto/valor para aplicar ao frete"}
+    ]},
+    types:{title:"Tipos de pedido",fields:[{key:"name",label:"Tipo de pedido",required:true}]},
+    carriers:{title:"Transportadoras de redespacho",fields:[
+      {key:"code",label:"Código original",required:true},
+      {key:"name",label:"Nome"},
+      {key:"address",label:"Endereço completo",type:"textarea"},
+      {key:"freight",label:"Valor ou informação do frete"},
+      {key:"substitute",label:"Código da transportadora substituta",required:true}
+    ]},
+    items:{title:"Itens",fields:[{key:"code",label:"Código/número do item",required:true},{key:"name",label:"Nome do item"}]},
+    ufs:{title:"UFs dos clientes",fields:[{key:"clientCode",label:"Código do cliente",required:true},{key:"uf",label:"UF",required:true}]},
+    cities:{title:"Cidades e tarifas/regiões",fields:[{key:"city",label:"Cidade",required:true},{key:"region",label:"Tarifa/região",required:true}]}
+  };
+  const state={tab:"Importar relatório",data:{clients:[],types:[],carriers:[],items:[],ufs:[],cities:[]},headers:[],rows:[],processed:[],filename:"",editing:null,
+    mapping:{client:"",orderType:"",carrier:"",item:"",uf:"",city:"",region:"",freight:""}};
+  const tabNames=["Importar relatório",...Object.values(definitions).map(x=>x.title),"Ajuda e cadastros"];
+  const $=s=>document.querySelector(s);
+  const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const norm=v=>String(v??"").trim().toLocaleLowerCase("pt-BR");
+  function renderTabs(){ $("#tabs").innerHTML=tabNames.map(n=>`<button class="tab ${state.tab===n?"active":""}" data-tab="${esc(n)}">${esc(n)}</button>`).join(""); }
+  function render(){
+    renderTabs();
+    if(state.tab==="Importar relatório")renderImport();
+    else if(state.tab==="Ajuda e cadastros")renderHelp();
+    else {const key=Object.keys(definitions).find(k=>definitions[k].title===state.tab);renderRegistry(key);}
+  }
+  function renderImport(){
+    const has=state.headers.length>0;
+    $("#content").innerHTML=`
+      <div class="panel">
+        <h2>1. Importar relatório</h2>
+        <div class="upload"><strong>Selecione um relatório CSV</strong><div class="small">A primeira linha deve conter os cabeçalhos das colunas.</div>
+          <input type="file" id="reportFile" accept=".csv,.txt,.tsv,text/csv,text/plain">
+        </div>
+        ${has?`<div class="stats"><div class="stat"><strong>${state.rows.length}</strong> linhas importadas</div><div class="stat"><strong>${esc(state.filename)}</strong> arquivo</div></div>
+        <h3>2. Relacione as colunas do relatório</h3>
+        <p class="small">Selecione as colunas correspondentes. Campos não usados permanecem inalterados. Para “Tipo de pedido”, a busca é por trecho de texto, sem diferenciar maiúsculas/minúsculas.</p>
+        <div class="mapping">${[
+          ["client","Código do cliente"],["orderType","Tipo de pedido"],["carrier","Código da transportadora"],
+          ["item","Código do item"],["uf","UF do cliente"],["city","Cidade"],["region","Tarifa/região"],["freight","Campo de frete"]
+        ].map(([k,l])=>`<div><label>${l}</label><select data-map="${k}">${columnOptions(state.mapping[k])}</select></div>`).join("")}</div>
+        <div class="actions"><button id="processBtn">Conferir e tratar relatório</button><button class="secondary" id="clearReport">Limpar relatório</button></div>`:
+        `<p class="muted">Após selecionar o arquivo, configure o vínculo entre cabeçalhos e campos antes de processar.</p>`}
+      </div>
+      ${state.processed.length?renderResult():""}`;
+    $("#reportFile")?.addEventListener("change",loadReport);
+    document.querySelectorAll("[data-map]").forEach(el=>el.addEventListener("change",e=>{state.mapping[e.target.dataset.map]=e.target.value;}));
+    $("#processBtn")?.addEventListener("click",processReport);
+    $("#clearReport")?.addEventListener("click",()=>{state.headers=[];state.rows=[];state.processed=[];state.filename="";render();});
+    $("#exportReport")?.addEventListener("click",exportReport);
+  }
+  function columnOptions(selected){return `<option value="">— Não usar —</option>`+state.headers.map(h=>`<option value="${esc(h)}" ${h===selected?"selected":""}>${esc(h)}</option>`).join("");}
+  function renderResult(){
+    const issues=state.processed.filter(r=>r._status!=="OK").length;
+    const hits=state.processed.filter(r=>r._hit).length;
+    const view=state.processed.slice(0,300);
+    const cols=[...state.headers,"Conferência","Regras aplicadas"];
+    return `<div class="panel"><h2>3. Resultado da conferência</h2>
+      <div class="stats"><div class="stat"><strong>${state.processed.length}</strong> linhas</div><div class="stat"><strong>${hits}</strong> pedidos com tipo cadastrado</div><div class="stat"><strong>${issues}</strong> linhas com alerta</div></div>
+      <p class="small"><span class="badge warn">Amarelo</span> pedido com tipo cadastrado; barra lateral indica alerta. A prévia mostra até 300 linhas, mas a exportação inclui todas.</p>
+      <div class="actions"><button id="exportReport">Exportar relatório tratado (CSV)</button></div>
+      <div class="scroll"><table><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>
+      ${view.map(r=>`<tr class="${r._hit?"row-hit ":""}${r._status!=="OK"?"row-issue":""}">${state.headers.map(h=>`<td>${esc(r[h])}</td>`).join("")}<td>${r._status==="OK"?'<span class="badge good">OK</span>':`<span class="badge warn">${esc(r._status)}</span>`}</td><td>${esc(r._rules.join(" · "))}</td></tr>`).join("")}
+      </tbody></table></div></div>`;
+  }
+  function parseCSV(text){
+    text=text.replace(/^\uFEFF/,"");
+    const first=(text.split(/\r?\n/)[0]||"");
+    const candidates=[",",";","\t"];
+    const sep=candidates.sort((a,b)=>first.split(b).length-first.split(a).length)[0];
+    const out=[];let row=[],cell="",quoted=false;
+    for(let i=0;i<text.length;i++){
+      const c=text[i];
+      if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(c==='"')quoted=false;else cell+=c;}
+      else if(c==='"')quoted=true;
+      else if(c===sep){row.push(cell);cell="";}
+      else if(c==="\n"){row.push(cell.replace(/\r$/,""));out.push(row);row=[];cell="";}
+      else cell+=c;
+    }
+    if(cell.length||row.length){row.push(cell.replace(/\r$/,""));out.push(row);}
+    return out.filter(r=>r.some(x=>String(x).trim()!==""));
+  }
+  async function loadReport(e){
+    const file=e.target.files[0];if(!file)return;
+    try{
+      const parsed=parseCSV(await file.text());
+      if(parsed.length<1)throw new Error("O arquivo está vazio.");
+      state.headers=parsed[0].map((h,i)=>String(h).trim()||`Coluna ${i+1}`);
+      state.rows=parsed.slice(1).map(r=>Object.fromEntries(state.headers.map((h,i)=>[h,r[i]??""])));
+      state.mapping={client:"",orderType:"",carrier:"",item:"",uf:"",city:"",region:"",freight:""};
+      state.processed=[];state.filename=file.name;render();
+    }catch(err){alert("Não foi possível importar o CSV: "+err.message);}
+  }
+  function processReport(){
+    const get=(r,k)=>state.mapping[k]?String(r[state.mapping[k]]??"").trim():"";
+    state.processed=state.rows.map(original=>{
+      const r={...original}, rules=[], problems=[];
+      const clientCode=get(r,"client"), typeValue=get(r,"orderType"), carrierCode=get(r,"carrier"), itemCode=get(r,"item"), ufValue=get(r,"uf"), cityValue=get(r,"city"), regionValue=get(r,"region");
+      if(typeValue&&state.data.types.some(t=>norm(typeValue).includes(norm(t.name)))){r._hit=true;rules.push("Tipo de pedido cadastrado");}else r._hit=false;
+      if(clientCode){
+        const client=state.data.clients.find(c=>norm(c.code)===norm(clientCode));
+        if(!client)problems.push("Cliente sem cadastro");
+        else{
+          if(client.notes)rules.push("Instrução do cliente: "+client.notes);
+          const freightField=state.mapping.freight;
+          if(freightField&&client.freightMode&&client.freightMode!=="none"&&client.freightValue){
+            const before=String(r[freightField]??"");
+            r[freightField]=client.freightMode==="replace"?client.freightValue:(before?before+" | ":"")+client.freightValue;
+            rules.push(client.freightMode==="replace"?"Frete substituído pela regra do cliente":"Informação acrescentada ao frete");
+          }else if(client.freightMode&&client.freightMode!=="none"&&!freightField)problems.push("Regra de frete definida, mas coluna de frete não vinculada");
+          const uf=state.data.ufs.find(x=>norm(x.clientCode)===norm(clientCode));
+          if(uf&&ufValue&&norm(uf.uf)!==norm(ufValue))problems.push(`UF divergente: cadastro ${uf.uf}, relatório ${ufValue}`);
+          if(!uf&&ufValue)problems.push("UF do cliente sem cadastro");
+        }
+      }
+      if(carrierCode){
+        const carrier=state.data.carriers.find(c=>norm(c.code)===norm(carrierCode));
+        if(carrier){r[state.mapping.carrier]=carrier.substitute;rules.push(`Transportadora ${carrier.code} substituída por ${carrier.substitute}`);}
+      }
+      if(itemCode&&!state.data.items.some(x=>norm(x.code)===norm(itemCode)))problems.push("Item sem cadastro");
+      if(cityValue){
+        const city=state.data.cities.find(x=>norm(x.city)===norm(cityValue));
+        if(!city)problems.push("Cidade sem cadastro");
+        else if(regionValue&&norm(city.region)!==norm(regionValue))problems.push(`Região divergente: cadastro ${city.region}, relatório ${regionValue}`);
+      }
+      if(!clientCode&&state.mapping.client)problems.push("Código do cliente vazio");
+      r._rules=rules;
+      r._status=problems.length?problems.join("; "):"OK";
+      return r;
+    });
+    render();
+  }
+  function csvEscape(v){const s=String(v??"");return /[;"\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+  function download(name,content,type){
+    const blob=new Blob([content],{type});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+  function exportReport(){
+    if(!state.processed.length)return;
+    const headers=[...state.headers,"Conferência","Regras aplicadas"];
+    const lines=[headers.map(csvEscape).join(";"),...state.processed.map(r=>[...state.headers.map(h=>r[h]??""),r._status,r._rules.join(" | ")].map(csvEscape).join(";"))];
+    download("relatorio_tratado.csv","\uFEFF"+lines.join("\r\n"),"text/csv;charset=utf-8");
+  }
+  function renderRegistry(key){
+    const def=definitions[key],list=state.data[key],edit=state.editing?.key===key?state.editing.index:null;
+    const current=edit!==null?list[edit]:{};
+    $("#content").innerHTML=`<div class="panel"><h2>Cadastro — ${esc(def.title)}</h2>
+      <form id="recordForm"><div class="grid">${def.fields.map(f=>fieldHTML(f,current[f.key]??"")).join("")}</div>
+      <div class="actions"><button type="submit">${edit!==null?"Salvar alterações":"Adicionar cadastro"}</button>${edit!==null?'<button class="secondary" type="button" id="cancelEdit">Cancelar</button>':""}</div></form>
+      <div class="scroll">${list.length?`<table><thead><tr>${def.fields.map(f=>`<th>${esc(f.label)}</th>`).join("")}<th>Ações</th></tr></thead><tbody>${list.map((r,i)=>`<tr>${def.fields.map(f=>`<td>${esc(r[f.key])}</td>`).join("")}<td class="cell-actions"><button class="secondary" data-edit="${i}">Editar</button> <button class="danger" data-delete="${i}">Excluir</button></td></tr>`).join("")}</tbody></table>`:'<div class="empty">Nenhum registro cadastrado.</div>'}</div>
+      <p class="small">Cadastros são mantidos enquanto esta página permanecer aberta. Use a aba “Ajuda e cadastros” para exportar/importar uma cópia em JSON.</p></div>`;
+    $("#recordForm").addEventListener("submit",e=>{
+      e.preventDefault();const fd=new FormData(e.target),record={};
+      for(const f of def.fields)record[f.key]=String(fd.get(f.key)??"").trim();
+      for(const f of def.fields)if(f.required&&!record[f.key]){alert(`Preencha: ${f.label}`);return;}
+      if(key==="clients"&&!record.freightMode)record.freightMode="none";
+      const duplicate=def.fields.find(f=>f.required&&list.some((x,i)=>i!==edit&&norm(x[f.key])===norm(record[f.key])));
+      if(duplicate){alert(`Já existe um registro com esse valor em “${duplicate.label}”.`);return;}
+      if(edit!==null)list[edit]=record;else list.push(record);
+      state.editing=null;render();
+    });
+    $("#cancelEdit")?.addEventListener("click",()=>{state.editing=null;render();});
+    document.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>{state.editing={key,index:Number(b.dataset.edit)};render();}));
+    document.querySelectorAll("[data-delete]").forEach(b=>b.addEventListener("click",()=>{const i=Number(b.dataset.delete);if(confirm("Excluir este cadastro?")){list.splice(i,1);state.editing=null;render();}}));
+  }
+  function fieldHTML(f,value){
+    const input=f.type==="textarea"?`<textarea name="${f.key}">${esc(value)}</textarea>`:
+      f.type==="select"?`<select name="${f.key}">${f.options.map(([v,l])=>`<option value="${esc(v)}" ${value===v?"selected":""}>${esc(l)}</option>`).join("")}</select>`:
+      `<input name="${f.key}" value="${esc(value)}" ${f.required?"required":""}>`;
+    return `<div class="field"><label>${esc(f.label)}${f.required?" *":""}</label>${input}</div>`;
+  }
+  function renderHelp(){
+    $("#content").innerHTML=`<div class="panel"><h2>Ajuda rápida</h2>
+      <ol><li>Cadastre clientes e suas instruções. Para alterar frete, selecione “Acrescentar” ou “Substituir” e informe o texto/valor que deve ser aplicado.</li>
+      <li>Cadastre tipos de pedido. A conferência procura o texto cadastrado dentro do valor da coluna de tipo de pedido.</li>
+      <li>Cadastre transportadoras de redespacho com o código original e o código substituto. O processamento troca somente o código na coluna vinculada.</li>
+      <li>Cadastre itens, UFs por cliente e cidades com suas tarifas/regiões para validar os dados correspondentes.</li>
+      <li>Na aba “Importar relatório”, selecione o CSV, relacione os cabeçalhos e clique em “Conferir e tratar”. Exporte o resultado tratado em CSV.</li></ol>
+      <h3>Regras e suposições desta versão</h3>
+      <ul><li>O CSV deve conter cabeçalhos na primeira linha. São reconhecidos separadores vírgula, ponto e vírgula ou tabulação.</li>
+      <li>Particularidades são exibidas em “Regras aplicadas”. A alteração do frete é controlada por cliente e só ocorre quando a coluna de frete estiver vinculada.</li>
+      <li>UF é conferida contra o cadastro do cliente; cidade/região são comparadas sem diferenciar maiúsculas/minúsculas. Códigos também são comparados sem essa diferença.</li>
+      <li>Dados originais são mantidos, exceto o código de transportadora substituído e o campo de frete quando uma regra de cliente estiver configurada.</li>
+      <li>Linhas com inconsistências recebem alertas na coluna “Conferência”. A cor amarela marca pedidos cujo tipo corresponde a um tipo cadastrado.</li></ul>
+      <div class="actions"><button id="exportData">Exportar cadastros (JSON)</button><label class="button secondary" for="importData">Importar cadastros (JSON)</label><input class="hidden" id="importData" type="file" accept=".json,application/json"></div>
+      <p class="small">Os cadastros não são enviados a um servidor. Guarde o arquivo JSON exportado para reutilizá-los em outra sessão.</p></div>`;
+    $("#exportData").addEventListener("click",()=>download("cadastros_conferidor.json",JSON.stringify(state.data,null,2),"application/json"));
+    $("#importData").addEventListener("change",async e=>{
+      const file=e.target.files[0];if(!file)return;
+      try{
+        const incoming=JSON.parse(await file.text());
+        for(const k of Object.keys(definitions))if(!Array.isArray(incoming[k]))throw new Error(`Formato inválido: cadastro ${definitions[k].title} ausente.`);
+        state.data=incoming;state.editing=null;alert("Cadastros importados.");render();
+      }catch(err){alert("Não foi possível importar os cadastros: "+err.message);}
+    });
+  }
+  $("#tabs").addEventListener("click",e=>{
+    const b=e.target.closest("[data-tab]");if(!b)return;
+    state.tab=b.dataset.tab;state.editing=null;render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>
